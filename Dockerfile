@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.7
 # Production image: Next.js standalone server, migrations run on boot.
 
 FROM node:22-bookworm-slim AS deps

@@ -59,12 +59,18 @@ With no `SMTP_URL`, emails are printed to the server log. With `CARD_GATEWAY=non
 
 Requirements: a Linux VM with Docker and the Compose plugin, ports 80 and 443 open, and a DNS A record for your domain pointing at it.
 
+Every push to `main` is tested, built into a Docker image and published to `ghcr.io/cloudmjenzi/explorer` by GitHub Actions (`.github/workflows/docker.yml`), then the image is booted against Postgres and smoke-tested. The VM only pulls it.
+
 ```bash
-git clone <this repo> explorer && cd explorer
+git clone https://github.com/cloudmjenzi/explorer.git && cd explorer
 cp .env.example .env && nano .env      # fill every value, see LAUNCH.md
-docker compose up -d --build
+echo <github-token-with-read:packages> | docker login ghcr.io -u <github-user> --password-stdin   # only if the package is private
+docker compose pull
+docker compose up -d
 docker compose exec -e ADMIN_EMAIL=you@example.com -e ADMIN_PASSWORD='long passphrase' app node scripts/seed.cjs
 ```
+
+No registry access? `docker compose up -d --build` builds the image on the VM instead.
 
 That gives you:
 
@@ -76,7 +82,7 @@ That gives you:
 | `cron` | Hourly: expires unpaid holds, marks past trips complete, sends review requests |
 | `backup` | Nightly database dump and photo archive to `./backups`, kept 14 days. Copy these off the VM |
 
-Update: `git pull && docker compose up -d --build`. Migrations run automatically.
+Update: `git pull && docker compose pull && docker compose up -d`. Migrations run automatically. To roll back, set `APP_TAG=sha-<commit>` in `.env` and run the same command.
 
 ## Payments
 

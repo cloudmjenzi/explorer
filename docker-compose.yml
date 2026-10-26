@@ -17,6 +17,8 @@ services:
       retries: 10
 
   app:
+    # Pre-built by GitHub Actions on every push to main. Falls back to building locally.
+    image: ghcr.io/cloudmjenzi/explorer:${APP_TAG:-latest}
     build: .
     restart: unless-stopped
     env_file: .env

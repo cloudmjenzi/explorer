@@ -1,0 +1,106 @@
+name: Test, build and publish image
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: explorer
+          POSTGRES_USER: explorer
+          POSTGRES_PASSWORD: explorer
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U explorer" --health-interval 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://explorer:explorer@localhost:5432/explorer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npx tsx scripts/migrate.ts
+      - run: npx tsx scripts/seed.ts
+      - run: npm run build
+
+  image:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+            type=semver,pattern={{version}}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Boot the built image against a real Postgres and check it serves pages.
+  smoke:
+    needs: image
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run image with Postgres
+        run: |
+          docker network create t
+          docker run -d --name db --network t -e POSTGRES_DB=explorer -e POSTGRES_USER=explorer -e POSTGRES_PASSWORD=explorer postgres:16-alpine
+          for i in $(seq 1 30); do docker exec db pg_isready -U explorer && break; sleep 2; done
+          docker run -d --name app --network t -p 3000:3000 \
+            -e DATABASE_URL=postgresql://explorer:explorer@db:5432/explorer \
+            -e APP_URL=http://localhost:3000 \
+            ${{ env.IMAGE }}:sha-${GITHUB_SHA::7}
+          for i in $(seq 1 30); do curl -fs localhost:3000/api/health && break; sleep 2; done
+          docker exec -e ADMIN_EMAIL=ci@example.com -e ADMIN_PASSWORD=ci-password-123 app node scripts/seed.cjs
+          for p in / /explore /regions /partners /legal/terms /sitemap.xml /login; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' localhost:3000$p); echo "$code $p"; test "$code" = 200
+          done
+          docker exec app sh -c 'touch /data/uploads/.write-test && echo uploads writable'
+      - if: failure()
+        run: docker logs app
