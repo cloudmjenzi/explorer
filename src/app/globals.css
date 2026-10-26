@@ -1,26 +1,129 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+  Explorer Botswana design tokens.
+  Pan: the salt-pan white of Makgadikgadi (cool, not cream).
+  Ink: Delta water at dusk. Delta: action blue, a deeper take on the flag's sky blue.
+  Sand: Kalahari. Ochre: ratings and small highlights. Mopane: confirmations.
+*/
+@theme {
+  --color-pan: #f6f8f7;
+  --color-paper: #ffffff;
+  --color-ink: #0e2a33;
+  --color-ink-2: #4a5f64;
+  --color-ink-3: #7b8e92;
+  --color-line: #d5dfdd;
+  --color-line-2: #e7eeec;
+  --color-delta: #1f5e8c;
+  --color-delta-dark: #164769;
+  --color-sky: #75aadb;
+  --color-sky-soft: #e3eff9;
+  --color-sand: #ead9b6;
+  --color-sand-soft: #f6efe0;
+  --color-ochre: #a8681a;
+  --color-mopane: #3f6b3a;
+  --color-mopane-soft: #e6efe2;
+  --color-danger: #a63a2b;
+  --color-danger-soft: #f8e7e3;
+  --color-flag-black: #111111;
+
+  --font-display: "Bricolage Grotesque Variable", "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Public Sans Variable", "Public Sans", ui-sans-serif, system-ui, sans-serif;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-pan);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  letter-spacing: -0.015em;
+  line-height: 1.1;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-sky);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+::selection {
+  background: var(--color-sky-soft);
+}
+
+/* The flag band: sky, white, black, white, sky. Used once per page as the header's lower edge. */
+.flag-band {
+  height: 9px;
+  background: linear-gradient(
+    to bottom,
+    var(--color-sky) 0 2px,
+    #fff 2px 3px,
+    var(--color-flag-black) 3px 6px,
+    #fff 6px 7px,
+    var(--color-sky) 7px 9px
+  );
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-[15px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+}
+@utility btn-primary {
+  @apply btn bg-delta text-white hover:bg-delta-dark;
+}
+@utility btn-secondary {
+  @apply btn border border-line bg-paper text-ink hover:border-ink-3;
+}
+@utility btn-ghost {
+  @apply btn text-delta hover:bg-sky-soft;
+}
+@utility btn-danger {
+  @apply btn border border-danger/30 bg-paper text-danger hover:bg-danger-soft;
+}
+@utility field-label {
+  @apply mb-1.5 block text-[14px] font-bold text-ink;
+}
+@utility field-hint {
+  @apply mt-1 block text-[13px] text-ink-2;
+}
+@utility input {
+  @apply block w-full rounded-md border border-line bg-paper px-3 py-2.5 text-[16px] text-ink placeholder:text-ink-3 focus:border-delta focus:outline-none focus:ring-2 focus:ring-sky/40;
+}
+@utility panel {
+  @apply rounded-lg border border-line bg-paper;
+}
+@utility link {
+  @apply text-delta underline decoration-delta/30 underline-offset-2 hover:decoration-delta;
+}
+@utility badge {
+  @apply inline-flex items-center rounded-sm px-2 py-0.5 text-[13px] font-bold;
+}
+.prose-body p {
+  margin-bottom: 1rem;
+  max-width: 68ch;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
