@@ -72,9 +72,10 @@ export async function confirmManualPaymentAction(_: FormState, formData: FormDat
   if (payerRef.length < 3) return { error: "Enter the transaction ID from the statement." };
   const dup = await db.select({ id: payments.id }).from(payments).where(and(eq(payments.payerRef, payerRef), eq(payments.status, "SUCCEEDED")));
   if (dup.length) return { error: "That transaction ID was already used to confirm another booking." };
-  await confirmManualPayment(b, payerRef, admin.id);
+  const settled = await confirmManualPayment(b, payerRef, admin.id);
   revalidatePath("/admin/bookings");
-  redirect(`/admin/bookings?confirmed=${b.ref}`);
+  if (settled?.outcome === "confirmed") redirect(`/admin/bookings?confirmed=${b.ref}`);
+  redirect(`/admin/bookings?q=${b.ref}&nospace=${b.ref}`);
 }
 
 export async function adminCancelAction(formData: FormData) {

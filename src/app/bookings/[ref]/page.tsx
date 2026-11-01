@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { bookings } from "@/db/schema";
 import { getUser } from "@/lib/auth";
+import { claimBooking } from "@/lib/bookings";
 import { CANCELLATION, PAYMENT_METHODS } from "@/lib/catalog";
 import { formatBwp } from "@/lib/money";
 import { formatDate, formatDateTime } from "@/lib/dates";
@@ -34,6 +35,8 @@ export default async function BookingPage({ params, searchParams }: { params: P;
     (sp.t && sp.t === b.manageToken) ||
     (user && (user.id === b.userId || user.role === "ADMIN" || user.provider?.id === b.listing.providerId));
   if (!allowed) notFound();
+  // Holding the secret link proves the visitor received the confirmation email.
+  if (user && !b.userId && sp.t === b.manageToken) await claimBooking(b.id, user.id);
   const t = b.manageToken;
   const l = b.listing;
   const balance = b.totalThebe - b.paidThebe;
@@ -80,7 +83,14 @@ export default async function BookingPage({ params, searchParams }: { params: P;
             </p>
           </Notice>
         )}
-        {b.status === "EXPIRED" && (
+        {b.status === "EXPIRED" && b.refundStatus !== "NONE" && (
+          <Notice tone="info">
+            Your payment arrived after your reservation hold ended and this departure filled up, so we couldn't confirm it.{" "}
+            {b.refundStatus === "PROCESSED" ? "Refunded" : "Refund on its way"}: {formatBwp(b.refundThebe)}.{" "}
+            <Link className="link" href={`/experiences/${l.slug}`}>Choose another date</Link>.
+          </Notice>
+        )}
+        {b.status === "EXPIRED" && b.refundStatus === "NONE" && (
           <Notice tone="error">
             This reservation expired before payment arrived. <Link className="link" href={`/experiences/${l.slug}`}>Book again</Link>. If you paid, contact {config.supportEmail} with your reference.
           </Notice>

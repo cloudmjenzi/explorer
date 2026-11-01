@@ -33,6 +33,11 @@ export default async function AdminBookings({ searchParams }: { searchParams: Pr
   return (
     <div>
       <h1 className="mb-4 text-[30px] font-extrabold">Bookings</h1>
+      {sp.nospace && (
+        <div className="mb-4">
+          <Notice tone="warning">Payment recorded, but {sp.nospace} could not be confirmed because the departure is now full. It's marked for a full refund and the guest has been told.</Notice>
+        </div>
+      )}
       {sp.confirmed && (
         <div className="mb-4">
           <Notice tone="success">Payment recorded and {sp.confirmed} confirmed. The guest and operator have been emailed.</Notice>

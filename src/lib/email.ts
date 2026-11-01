@@ -37,7 +37,9 @@ function layout(title: string, paragraphs: string[], cta?: { label: string; url:
 export async function sendMail(to: string, subject: string, content: { html: string; text: string }): Promise<void> {
   const t = getTransport();
   if (!t) {
-    console.info(`[mail:dev] to=${to} subject="${subject}"\n${content.text}\n`);
+    // Never print message bodies (reset links, booking links) to production logs.
+    if (process.env.NODE_ENV === "production") console.warn(`[mail] SMTP_URL not set, not sent: to=${to} subject="${subject}"`);
+    else console.info(`[mail:dev] to=${to} subject="${subject}"\n${content.text}\n`);
     return;
   }
   try {
@@ -114,6 +116,24 @@ export const mail = {
     );
   },
 
+  paymentWillBeRefunded(b: Booking, l: Pick<Listing, "title" | "meetingPoint">, reason: string) {
+    const why =
+      reason === "refund_no_space"
+        ? "Your payment reached us after your reservation hold had ended, and the departure filled up in the meantime, so we couldn't confirm it."
+        : reason === "refund_cancelled"
+          ? "Your payment reached us after the booking had been cancelled."
+          : "We received a second payment for a booking that was already paid.";
+    return sendMail(
+      b.email,
+      `Refund on its way: ${l.title} (${b.ref})`,
+      layout("We're refunding your payment", [
+        ...bookingLines(b, l),
+        why,
+        `A refund of <strong>${formatBwp(b.refundThebe)}</strong> will go back to your original payment method within 10 working days. You don't need to do anything.`,
+      ], { label: "View booking", url: manageUrl(b) }),
+    );
+  },
+
   operatorCancelled(to: string, b: Booking, l: Pick<Listing, "title" | "meetingPoint">) {
     return sendMail(to, `Booking cancelled: ${b.ref}`, layout("A booking was cancelled", bookingLines(b, l), {
       label: "Open your bookings",
@@ -129,6 +149,13 @@ export const mail = {
         `Thanks for booking ${escape(l.title)}. A short review helps local operators get found and helps the next traveller choose.`,
       ], { label: "Write a review", url: `${manageUrl(b)}#review` }),
     );
+  },
+
+  passwordReset(to: string, name: string, token: string, minutes: number) {
+    return sendMail(to, "Reset your password", layout(`Hi ${name.split(" ")[0]}`, [
+      `Someone asked to reset the password for this account. The link below works once, for ${minutes} minutes.`,
+      "If it wasn't you, ignore this email. Your password stays the same.",
+    ], { label: "Choose a new password", url: `${config.appUrl}/reset-password?token=${encodeURIComponent(token)}` }));
   },
 
   providerApplicationReceived(to: string, businessName: string) {

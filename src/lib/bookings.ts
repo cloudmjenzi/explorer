@@ -229,50 +229,77 @@ export async function createBooking(req: BookingRequest): Promise<Booking> {
   return result.booking;
 }
 
+export type PaymentOutcome = "confirmed" | "already_paid" | "refund_cancelled" | "refund_no_space" | "refund_overpaid";
+
 /**
- * Idempotently mark a payment as succeeded and confirm its booking.
- * Safe to call from a webhook and a return URL for the same payment.
+ * Idempotently record a successful payment and settle its booking.
+ * Safe to call from a webhook, a return URL and the reconciliation job for the same payment.
+ *
+ * - Payment inside a live hold: booking confirmed.
+ * - Payment after the hold lapsed: confirmed only if the departure still has room, otherwise refund due.
+ * - Payment on a cancelled booking, or a second payment on a paid booking: refund due.
  */
-export async function markPaymentSucceeded(paymentId: string, confirmedBy?: string): Promise<Booking | null> {
-  const outcome = await db.transaction(async (tx) => {
+export async function markPaymentSucceeded(
+  paymentId: string,
+  confirmedBy?: string,
+): Promise<{ booking: Booking; outcome: PaymentOutcome } | null> {
+  const result = await db.transaction(async (tx) => {
     const [p] = await tx.select().from(payments).where(eq(payments.id, paymentId)).for("update").limit(1);
-    if (!p) return null;
-    if (p.status === "SUCCEEDED") return { booking: null, alreadyDone: true };
-    await tx
-      .update(payments)
-      .set({ status: "SUCCEEDED", confirmedBy: confirmedBy ?? null })
-      .where(eq(payments.id, p.id));
+    if (!p || p.status === "SUCCEEDED") return null;
+    await tx.update(payments).set({ status: "SUCCEEDED", confirmedBy: confirmedBy ?? null }).where(eq(payments.id, p.id));
     const [b] = await tx.select().from(bookings).where(eq(bookings.id, p.bookingId)).for("update").limit(1);
-    const wasExpired = b.status === "EXPIRED" || b.status === "CANCELLED";
-    const [updated] = await tx
+    const [listing] = await tx.select().from(listings).where(eq(listings.id, b.listingId)).limit(1);
+    const paid = b.paidThebe + p.amountThebe;
+    const refund = (outcome: PaymentOutcome, status: Booking["status"]) =>
+      tx
+        .update(bookings)
+        .set({ paidThebe: paid, status, refundThebe: b.refundThebe + p.amountThebe, refundStatus: "DUE", expiresAt: null })
+        .where(eq(bookings.id, b.id))
+        .returning()
+        .then(([u]) => ({ booking: u, outcome }));
+
+    if (b.status === "CANCELLED") return refund("refund_cancelled", "CANCELLED");
+    if (b.status === "CONFIRMED" || b.status === "COMPLETED") {
+      if (b.paidThebe >= b.dueNowThebe) return refund("refund_overpaid", b.status);
+      const [u] = await tx.update(bookings).set({ paidThebe: paid }).where(eq(bookings.id, b.id)).returning();
+      return { booking: u, outcome: "already_paid" as const };
+    }
+
+    const holdLapsed = b.status === "EXPIRED" || !b.expiresAt || b.expiresAt < new Date();
+    if (holdLapsed) {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${listing.id}|${b.date}|${b.startTime}`}))`);
+      // This booking's own hold has lapsed, so it isn't counted in usedUnits.
+      const used = (await usedUnits(tx, listing, b.date)).get(b.startTime) ?? 0;
+      const need = unitsFor({ ...listing, guests: b.guests });
+      const stillRunning = b.date >= todayInBotswana();
+      if (!stillRunning || used + need > listing.capacity) return refund("refund_no_space", "EXPIRED");
+    }
+    const [u] = await tx
       .update(bookings)
-      .set({
-        paidThebe: b.paidThebe + p.amountThebe,
-        status: b.status === "CANCELLED" ? "CANCELLED" : "CONFIRMED",
-        expiresAt: null,
-      })
+      .set({ paidThebe: paid, status: "CONFIRMED", expiresAt: null })
       .where(eq(bookings.id, b.id))
       .returning();
-    return { booking: updated, alreadyDone: false, wasExpired };
+    return { booking: u, outcome: "confirmed" as const };
   });
-  if (!outcome || outcome.alreadyDone || !outcome.booking) return null;
-  const b = outcome.booking;
+  if (!result) return null;
+
+  const b = result.booking;
   const [ctx] = await db
     .select({ listing: listings, provider: providers })
     .from(listings)
     .innerJoin(providers, eq(providers.id, listings.providerId))
     .where(eq(listings.id, b.listingId));
-  if (b.status === "CONFIRMED") {
+  if (result.outcome === "confirmed") {
     await mail.bookingConfirmed(b, ctx.listing, { name: ctx.provider.businessName, phone: ctx.provider.phone });
     await mail.operatorNewBooking(ctx.provider.email, b, ctx.listing);
-  }
-  if (outcome.wasExpired) {
-    await mail.adminAlert(`Payment received after hold expired: ${b.ref}`, [
-      "Check the departure is not overbooked, or refund the guest.",
+  } else if (result.outcome.startsWith("refund")) {
+    await mail.paymentWillBeRefunded(b, ctx.listing, result.outcome);
+    await mail.adminAlert(`Refund due on ${b.ref}`, [
+      `Payment of P${(b.refundThebe / 100).toFixed(2)} received but the booking could not be confirmed (${result.outcome.replace("refund_", "").replace("_", " ")}).`,
     ]);
   }
-  await audit(confirmedBy ?? null, "payment.succeeded", "booking", b.id, { paymentId });
-  return b;
+  await audit(confirmedBy ?? null, `payment.${result.outcome}`, "booking", b.id, { paymentId });
+  return result;
 }
 
 export async function cancelBooking(
@@ -363,19 +390,24 @@ export async function runHousekeeping(): Promise<{ expired: number; completed: n
   return { expired: expired.length, completed: completed.length, reviewRequests };
 }
 
-export async function bookingsForUser(userId: string, email: string) {
+/**
+ * Only bookings explicitly attached to the account. Email addresses are not verified,
+ * so matching on email would let anyone sign up as a guest and take over their bookings.
+ */
+export async function bookingsForUser(userId: string) {
   return db.query.bookings.findMany({
-    where: or(eq(bookings.userId, userId), and(isNull(bookings.userId), eq(bookings.email, email.toLowerCase()))),
+    where: eq(bookings.userId, userId),
     with: { listing: { with: { images: true, region: true } } },
     orderBy: (b, { desc }) => [desc(b.date)],
   });
 }
 
-export async function linkGuestBookings(userId: string, email: string) {
+/** Attach a guest booking to an account. Only call after the secret manage token has been checked. */
+export async function claimBooking(bookingId: string, userId: string) {
   await db
     .update(bookings)
     .set({ userId })
-    .where(and(isNull(bookings.userId), eq(bookings.email, email.toLowerCase())));
+    .where(and(eq(bookings.id, bookingId), isNull(bookings.userId)));
 }
 
 export async function operatorEmailFor(listingId: string): Promise<string | null> {

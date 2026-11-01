@@ -1,6 +1,6 @@
 import "server-only";
 import Stripe from "stripe";
-import { and, eq } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
 import { payments, type Booking } from "@/db/schema";
 import { config } from "./config";
@@ -142,7 +142,8 @@ async function startStripe(booking: Booking, title: string): Promise<string> {
     customer_email: booking.email,
     client_reference_id: booking.ref,
     metadata: { paymentId: payment.id, bookingRef: booking.ref },
-    expires_at: Math.floor(Date.now() / 1000) + 31 * 60,
+    // Stripe needs 30 min to 24 h. Close the checkout before our hold on the seat ends.
+    expires_at: Math.floor(Date.now() / 1000) + Math.min(24 * 60, Math.max(30, config.holdMinutesCard - 5)) * 60,
     line_items: [
       {
         quantity: 1,
@@ -196,6 +197,35 @@ export async function confirmManualPayment(booking: Booking, payerRef: string, a
     })
     .returning();
   return markPaymentSucceeded(p.id, adminId);
+}
+
+/**
+ * Server-side safety net: a tourist can pay on the gateway's page and close the tab before
+ * being redirected back. Ask the gateway about every recent unsettled card payment.
+ */
+export async function reconcileCardPayments(): Promise<{ checked: number; paid: number }> {
+  const pending = await db
+    .select({ id: payments.id, gateway: payments.gateway })
+    .from(payments)
+    .where(
+      and(
+        eq(payments.status, "PENDING"),
+        inArray(payments.gateway, ["DPO", "STRIPE"]),
+        isNotNull(payments.externalRef),
+        gt(payments.createdAt, new Date(Date.now() - 48 * 3_600_000)),
+      ),
+    )
+    .limit(200);
+  let paid = 0;
+  for (const p of pending) {
+    try {
+      const r = p.gateway === "DPO" ? await verifyDpo(p.id) : await verifyStripe(p.id);
+      if (r === "paid") paid++;
+    } catch (err) {
+      console.error("reconcile failed", p.id, err);
+    }
+  }
+  return { checked: pending.length, paid };
 }
 
 export function availableMethods(): { card: boolean; manual: string[] } {

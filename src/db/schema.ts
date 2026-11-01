@@ -74,6 +74,19 @@ export const sessions = pgTable(
   (t) => [index("sessions_user_idx").on(t.userId)],
 );
 
+export const passwordResets = pgTable(
+  "password_resets",
+  {
+    id: text("id").primaryKey(), // sha256 of the emailed token
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("password_resets_user_idx").on(t.userId)],
+);
+
 export const regions = pgTable("regions", {
   id: id(),
   slug: text("slug").notNull().unique(),

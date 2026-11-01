@@ -30,6 +30,12 @@ Built with Next.js 16, PostgreSQL 16 and Drizzle ORM. Deploys as a Docker Compos
 - Payout batches per operator, mark paid with bank reference, CSV export
 - Hide reviews, manage user roles; every sensitive action is written to an audit log
 
+## Accounts and security notes
+
+- Email addresses aren't verified at sign-up, so a guest booking is only added to an account through the secret link in the confirmation email (or Find my booking with reference + email). Signing up with someone's email gives no access to their bookings.
+- Forgot password sends a one-time link valid for 60 minutes and logs the account out everywhere else.
+- Card payments are confirmed only after the server checks with DPO or Stripe. The cron also re-checks recent unsettled card payments, so a tourist who pays and closes the tab still gets confirmed. A payment that arrives after the seat was released is confirmed only if the departure still has room; otherwise it's marked for a full refund and the guest is emailed.
+
 ## Money rules
 
 - Prices are stored in thebe (integer cents of pula). No floating-point money.
@@ -59,7 +65,7 @@ With no `SMTP_URL`, emails are printed to the server log. With `CARD_GATEWAY=non
 
 Requirements: a Linux VM with Docker and the Compose plugin, ports 80 and 443 open, and a DNS A record for your domain pointing at it.
 
-Every push to `main` is tested, built into a Docker image and published to `ghcr.io/cloudmjenzi/explorer` by GitHub Actions (`.github/workflows/docker.yml`), then the image is booted against Postgres and smoke-tested. The VM only pulls it.
+Every push to `main` is tested, built into a Docker image and published to `ghcr.io/cloudmjenzi/explorer` by GitHub Actions (`.github/workflows/docker.yml`), then the image is booted against Postgres and smoke-tested. The image is built for both Intel/AMD (`amd64`) and Arm (`arm64`, e.g. Oracle Cloud's free Ampere VMs), so the same `docker compose pull` works on either. The VM only pulls it.
 
 ```bash
 git clone https://github.com/cloudmjenzi/explorer.git && cd explorer
@@ -79,7 +85,7 @@ That gives you:
 | `caddy` | HTTPS with automatic Let's Encrypt certificates, compression, blocks the cron URL from the internet |
 | `app` | The web app. Applies database migrations on start. Photos stored in the `uploads` volume |
 | `db` | PostgreSQL 16 in the `pgdata` volume |
-| `cron` | Hourly: expires unpaid holds, marks past trips complete, sends review requests |
+| `cron` | Every 10 minutes: settles card payments the gateway took even if the tourist closed the tab, expires unpaid holds, marks past trips complete, sends review requests |
 | `backup` | Nightly database dump and photo archive to `./backups`, kept 14 days. Copy these off the VM |
 
 Update: `git pull && docker compose pull && docker compose up -d`. Migrations run automatically. To roll back, set `APP_TAG=sha-<commit>` in `.env` and run the same command.
