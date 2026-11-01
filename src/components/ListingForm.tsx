@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { saveListingAction } from "@/app/actions/provider";
 import { FormError, SubmitButton } from "./forms";
+import { PhotoPicker } from "./PhotoPicker";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -35,11 +36,13 @@ export function ListingForm({
   regions,
   categories,
   commissionPct,
+  existingPhotos = 0,
 }: {
   defaults?: ListingDefaults;
   regions: { id: string; name: string }[];
   categories: { value: string; label: string }[];
   commissionPct: number;
+  existingPhotos?: number;
 }) {
   const [state, action] = useActionState(saveListingAction, undefined);
   const [unit, setUnit] = useState(defaults.pricingUnit ?? "PER_PERSON");
@@ -203,8 +206,7 @@ export function ListingForm({
 
       <fieldset className="panel space-y-3 p-5">
         <legend className="px-1 font-display text-[20px] font-extrabold">Add photos</legend>
-        <input className="block text-[15px]" type="file" name="photos" accept="image/jpeg,image/png,image/webp,image/heic" multiple />
-        <span className="field-hint">Up to 12 photos, 12 MB each. Landscape works best. Real photos of your trip, not stock images.</span>
+        <PhotoPicker existing={existingPhotos} />
       </fieldset>
 
       <FormError state={state} />

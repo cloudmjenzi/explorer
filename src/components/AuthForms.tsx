@@ -17,6 +17,7 @@ export function LoginForm({ next }: { next?: string }) {
       <div>
         <label className="field-label" htmlFor="password">Password</label>
         <input className="input" id="password" name="password" type="password" autoComplete="current-password" required />
+        <Link href="/forgot-password" className="link mt-1.5 inline-block text-[14px]">Forgot your password?</Link>
       </div>
       <FormError state={state} />
       <SubmitButton className="btn-primary w-full" pending="Logging in…">Log in</SubmitButton>

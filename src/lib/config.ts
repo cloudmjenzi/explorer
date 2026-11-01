@@ -48,7 +48,14 @@ export const config = {
     SMEGA: process.env.PAY_SMEGA ?? "",
     BANK_TRANSFER: process.env.PAY_BANK_TRANSFER ?? "",
   } as Record<string, string>,
-  holdMinutesCard: num("HOLD_MINUTES_CARD", 30),
+  /**
+   * How long a seat is held while the tourist pays by card. Must outlast the gateway's own
+   * payment window, otherwise a tourist can pay after their seat was released.
+   */
+  get holdMinutesCard(): number {
+    const gatewayWindow = this.cardGateway === "dpo" ? this.dpo.ptlHours * 60 : 30;
+    return Math.max(num("HOLD_MINUTES_CARD", 0), gatewayWindow + 10);
+  },
   holdHoursManual: num("HOLD_HOURS_MANUAL", 24),
   cronSecret: process.env.CRON_SECRET ?? "",
   uploadDir: process.env.UPLOAD_DIR ?? "./uploads",

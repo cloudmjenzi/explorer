@@ -119,6 +119,8 @@ export async function saveListingAction(_: FormState, formData: FormData): Promi
   const days = formData.getAll("operatingDays").map(Number).filter((d) => d >= 0 && d <= 6);
   if (!days.length) return { error: "Choose at least one day the experience runs." };
   const d = parsed.data;
+  const [regionOk] = await db.select({ id: regions.id }).from(regions).where(eq(regions.id, d.regionId));
+  if (!regionOk) return { error: "Choose a region" };
   if (d.minGuests > (d.pricingUnit === "PER_PERSON" ? d.capacity : d.maxGroupSize)) {
     return { error: "Minimum guests can't be more than the group size." };
   }

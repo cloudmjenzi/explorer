@@ -82,6 +82,7 @@ export default async function EditListing({
         regions={rs}
         categories={CATEGORIES}
         commissionPct={provider.commissionBps / 100}
+        existingPhotos={imgs.length}
         defaults={{ ...l, price: l.priceThebe / 100 }}
       />
     </div>

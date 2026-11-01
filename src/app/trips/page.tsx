@@ -4,12 +4,13 @@ import { getUser } from "@/lib/auth";
 import { bookingsForUser } from "@/lib/bookings";
 import { formatDate, todayInBotswana } from "@/lib/dates";
 import { formatBwp } from "@/lib/money";
-import { PageHeader, Photo, StatusBadge } from "@/components/ui";
+import { Notice, PageHeader, Photo, StatusBadge } from "@/components/ui";
 import { FindBookingForm } from "@/components/FindBookingForm";
 
 export const metadata: Metadata = { title: "My trips", robots: { index: false } };
 
-export default async function Trips() {
+export default async function Trips({ searchParams }: { searchParams: Promise<{ reset?: string }> }) {
+  const { reset } = await searchParams;
   const user = await getUser();
   if (!user) {
     return (
@@ -22,7 +23,7 @@ export default async function Trips() {
       </div>
     );
   }
-  const all = await bookingsForUser(user.id, user.email);
+  const all = await bookingsForUser(user.id);
   const today = todayInBotswana();
   const upcoming = all.filter((b) => b.date >= today && !["CANCELLED", "EXPIRED"].includes(b.status)).reverse();
   const past = all.filter((b) => !upcoming.includes(b));
@@ -47,12 +48,17 @@ export default async function Trips() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
       <PageHeader title="My trips" />
+      {reset && <div className="mb-6"><Notice tone="success">Password changed. You're logged in.</Notice></div>}
       <h2 className="mb-3 text-[22px] font-extrabold">Upcoming</h2>
       {upcoming.length ? (
         <ul className="space-y-2">{upcoming.map((b) => <Row key={b.id} b={b} />)}</ul>
       ) : (
         <p className="text-ink-2">Nothing booked yet. <Link className="link" href="/explore">Find an experience</Link>.</p>
       )}
+      <details className="mt-8">
+        <summary className="cursor-pointer text-[15px] text-delta">Booked without logging in? Add that booking here</summary>
+        <div className="mt-3 max-w-md"><FindBookingForm /></div>
+      </details>
       {past.length > 0 && (
         <>
           <h2 className="mb-3 mt-10 text-[22px] font-extrabold">Past and cancelled</h2>

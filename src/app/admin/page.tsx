@@ -3,6 +3,7 @@ import { and, gte, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { bookings, listings, providers } from "@/db/schema";
 import { runHousekeeping } from "@/lib/bookings";
+import { reconcileCardPayments } from "@/lib/payments";
 import { unpaidBookings } from "@/lib/earnings";
 import { formatBwp } from "@/lib/money";
 import { todayInBotswana } from "@/lib/dates";
@@ -10,6 +11,7 @@ import { config } from "@/lib/config";
 import { Notice } from "@/components/ui";
 
 export default async function AdminHome() {
+  if (config.cardGateway !== "none") await reconcileCardPayments().catch((e) => console.error(e));
   await runHousekeeping();
   const monthStart = todayInBotswana().slice(0, 8) + "01";
   const [[month], [counts], owed] = await Promise.all([

@@ -3,7 +3,7 @@ import { config } from "@/lib/config";
 
 export default function robots(): MetadataRoute.Robots {
   return {
-    rules: [{ userAgent: "*", allow: "/", disallow: ["/admin", "/provider", "/book/", "/bookings/", "/trips", "/api/", "/pay/"] }],
+    rules: [{ userAgent: "*", allow: "/", disallow: ["/admin", "/provider", "/book/", "/bookings/", "/trips", "/api/", "/pay/", "/reset-password", "/forgot-password"] }],
     sitemap: `${config.appUrl}/sitemap.xml`,
   };
 }

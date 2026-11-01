@@ -9,7 +9,6 @@ import { db } from "@/db";
 import { users } from "@/db/schema";
 import { createSession, destroySession, dummyHash, hashPassword, safeNext, verifyPassword } from "@/lib/auth";
 import { rateLimit } from "@/lib/ratelimit";
-import { linkGuestBookings } from "@/lib/bookings";
 import { DISPLAY_CURRENCIES } from "@/lib/money";
 
 export type FormState = { error?: string; fieldErrors?: Record<string, string>; ok?: string } | undefined;
@@ -36,7 +35,6 @@ export async function login(_: FormState, formData: FormData): Promise<FormState
   const ok = await verifyPassword(parsed.data.password, user?.passwordHash ?? (await dummyHash()));
   if (!user || !ok) return { error: "That email and password don't match an account." };
   await createSession(user.id);
-  await linkGuestBookings(user.id, user.email);
   const fallback = user.role === "ADMIN" ? "/admin" : user.role === "PROVIDER" ? "/provider" : "/trips";
   redirect(safeNext(formData.get("next"), fallback));
 }
@@ -64,7 +62,6 @@ export async function signup(_: FormState, formData: FormData): Promise<FormStat
     })
     .returning();
   await createSession(user.id);
-  await linkGuestBookings(user.id, user.email);
   redirect(safeNext(formData.get("next"), "/trips"));
 }
 
